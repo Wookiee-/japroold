@@ -239,7 +239,7 @@ static void RemoveRabbit(void) {
 
 	for (i = 0; i < level.num_entities; i++) {
 		ent = &g_entities[i];
-		if (ent->inuse && (ent->s.eType == ET_ITEM) && (ent->item->giTag == PW_NEUTRALFLAG) && (ent->item->giType == IT_TEAM)) {
+		if (ent->inuse && (ent->s.eType == ET_ITEM) && (ent->item->giTag == PW_NEUTRALFLAG) && (ent->item->giType = IT_TEAM)) {
 			G_FreeEntity( ent );
 			return;
 		}
@@ -265,7 +265,7 @@ static void RemoveWeaponsFromMap(void) {
 				ent->r.contents = 0;
 				//ent->inuse = qfalse;
 			}
-			else if ((ent->item->giType == IT_AMMO) && wDisable && G_FreeAmmoEntity(ent->item)) {
+			else if (ent->item->giType == IT_AMMO && wDisable && G_FreeAmmoEntity(ent->item)) {
 				ent->think = 0;
 				ent->nextthink = 0;
 				ent->s.eFlags |= EF_NODRAW;
@@ -401,24 +401,6 @@ void CVU_Rabbit( void ) {
 	else {
 		RemoveRabbit();
 	}
-}
-
-static void CVU_RaceMode(void) {
-	g_raceMode.integer ? //1 is forced, 2 allows /race cmd
-		(jcinfo2.integer |= JAPRO_CINFO2_RACEMODE) : (jcinfo2.integer &= ~JAPRO_CINFO2_RACEMODE);
-	trap->Cvar_Set("jcinfo2", va("%i", jcinfo2.integer));
-}
-
-static void CVU_SaberSwitch(void) {
-	g_allowSaberSwitch.integer ?
-		(jcinfo2.integer |= JAPRO_CINFO2_SABERSWITCH) : (jcinfo2.integer &= ~JAPRO_CINFO2_SABERSWITCH);
-	trap->Cvar_Set("jcinfo2", va("%i", jcinfo2.integer));
-}
-
-static void CVU_Registration(void) {
-	g_allowRegistration.integer ?
-		(jcinfo2.integer |= JAPRO_CINFO2_REGISTRATION) : (jcinfo2.integer &= ~JAPRO_CINFO2_REGISTRATION);
-	trap->Cvar_Set("jcinfo2", va("%i", jcinfo2.integer));
 }
 
 //
