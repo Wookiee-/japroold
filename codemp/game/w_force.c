@@ -630,7 +630,7 @@ qboolean WP_ForcePowerAvailable( gentity_t *self, forcePowers_t forcePower, int 
 	int drain = overrideAmt ? overrideAmt :
 				forcePowerNeeded[self->client->ps.fd.forcePowerLevel[forcePower]][forcePower];
 
-	if (self->client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_BHOP) {
+	if (self->client->ps.stats[STAT_ONLYBHOP]) {
 		if ((forcePower == FP_SPEED) || (forcePower == FP_RAGE))
 			return qfalse;
 	}
@@ -2166,7 +2166,7 @@ void ForceDrainDamage( gentity_t *self, gentity_t *traceEnt, vec3_t dir, vec3_t 
 int ForceShootDrain( gentity_t *self )
 {
 	trace_t	tr;
-	vec3_t	end, forward, center;
+	vec3_t	end, forward;
 	gentity_t	*traceEnt;
 	int			gotOneOrMore = 0;
 
@@ -2177,18 +2177,22 @@ int ForceShootDrain( gentity_t *self )
 	AngleVectors( self->client->ps.viewangles, forward, NULL, NULL );
 	VectorNormalize( forward );
 
-	VectorCopy(self->client->ps.origin, center);
-	if (g_tweakForce.integer & FT_FIXDRAINCOF) {
-		center[2] += self->client->ps.viewheight - 16;
-	}
-
 	if ( self->client->ps.fd.forcePowerLevel[FP_DRAIN] > FORCE_LEVEL_2 )
 	{//arc
-		vec3_t	mins, maxs, dir, ent_org, size, v;
+		vec3_t	center, mins, maxs, dir, ent_org, size, v, behind;
 		float	radius = MAX_DRAIN_DISTANCE, dot, dist, cof;
 		gentity_t	*entityList[MAX_GENTITIES];
 		int			iEntityList[MAX_GENTITIES];
 		int		e, numListedEntities, i;
+
+		VectorCopy( self->client->ps.origin, center );
+		VectorCopy( self->client->ps.origin, behind );
+
+		if (g_tweakForce.integer & FT_FIXDRAINCOF) {
+			VectorMA( behind, -16, forward, behind ); //Push it behind us a bit to stop problem of missing drains when we are right up against someone
+			center[2] += 8; //So the drain origin point was actually lower than the comparison point on the target, meaning the min/max drain offset viewangles were not equal.
+			behind[2] += 8;
+		}
 
 		for ( i = 0 ; i < 3 ; i++ ) 
 		{
@@ -2245,23 +2249,22 @@ int ForceShootDrain( gentity_t *self )
 			VectorMA( traceEnt->r.absmin, 0.5, size, ent_org );
 
 			if (g_tweakForce.integer & FT_FIXDRAINCOF) {
-				vec3_t behind;
-
-				VectorCopy(center, behind);
-				VectorMA(behind, -16, forward, behind);
-
-				ent_org[2] += 8;
-				VectorSubtract(ent_org, behind, dir);
-
-				cof = 0.7f;
+				cof = 0.1;
+				VectorSubtract( ent_org, behind, dir );
+				VectorNormalize( dir );
+				if ( (dot = DotProduct( dir, forward )) < 0.8 ) {//test if they are infront of us
+					continue;
+				}
 			}
 			else {
-				VectorSubtract(ent_org, center, dir);
-				cof = 0.5f;
+				cof = 0.5;
 			}
 
-			VectorNormalize(dir);
-			if ((dot = DotProduct(dir, forward)) < cof) { //test if they are in cone
+			//see if they're in front of me
+			//must be within the forward cone
+			VectorSubtract( ent_org, center, dir );
+			VectorNormalize( dir );
+			if ( (dot = DotProduct( dir, forward )) < cof ) { //test if they are in cone
 				continue;
 			}
 
@@ -2279,7 +2282,7 @@ int ForceShootDrain( gentity_t *self )
 			}
 
 			//Now check and see if we can actually hit it
-			JP_Trace( &tr, center, vec3_origin, vec3_origin, ent_org, self->s.number, MASK_SHOT, qfalse, 0, 0 );
+			JP_Trace( &tr, self->client->ps.origin, vec3_origin, vec3_origin, ent_org, self->s.number, MASK_SHOT, qfalse, 0, 0 );
 			if ( tr.fraction < 1.0f && tr.entityNum != traceEnt->s.number )
 			{//must have clear LOS
 				continue;
@@ -2292,9 +2295,9 @@ int ForceShootDrain( gentity_t *self )
 	}
 	else
 	{//trace-line
-		VectorMA( center, 2048, forward, end );
+		VectorMA( self->client->ps.origin, 2048, forward, end );
 		
-		JP_Trace( &tr, center, vec3_origin, vec3_origin, end, self->s.number, MASK_SHOT, qfalse, 0, 0 );
+		JP_Trace( &tr, self->client->ps.origin, vec3_origin, vec3_origin, end, self->s.number, MASK_SHOT, qfalse, 0, 0 );
 		if ( tr.entityNum == ENTITYNUM_NONE || tr.fraction == 1.0 || tr.allsolid || tr.startsolid || !g_entities[tr.entityNum].client || !g_entities[tr.entityNum].inuse )
 		{
 			return 0;
@@ -2908,11 +2911,16 @@ void GEntity_UseFunc( gentity_t *self, gentity_t *other, gentity_t *activator )
 	GlobalUse(self, other, activator);
 }
 
-int CanCounterThrow(gentity_t *self, gentity_t *thrower, qboolean pull)
+qboolean CanCounterThrow(gentity_t *self, gentity_t *thrower, qboolean pull)
 {
 	int powerUse = 0;
 
 	if (self->client->ps.forceHandExtend != HANDEXTEND_NONE)
+	{
+		return 0;
+	}
+
+	if (self->client->ps.weaponTime > 0)
 	{
 		return 0;
 	}
@@ -2924,6 +2932,12 @@ int CanCounterThrow(gentity_t *self, gentity_t *thrower, qboolean pull)
 
 	if ( self->client->ps.powerups[PW_DISINT_4] > level.time )
 	{
+		return 0;
+	}
+
+	if (self->client->ps.weaponstate == WEAPON_CHARGING ||
+		self->client->ps.weaponstate == WEAPON_CHARGING_ALT)
+	{ //don't autodefend when charging a weapon
 		return 0;
 	}
 
@@ -2962,20 +2976,6 @@ int CanCounterThrow(gentity_t *self, gentity_t *thrower, qboolean pull)
 	if (self->client->ps.groundEntityNum == ENTITYNUM_NONE)
 	{ //you cannot counter a push/pull if you're in the air
 		return 0;
-	}
-
-	if (self->client->ps.weaponTime > 0)
-	{
-		if (self->client->ps.weapon == WP_STUN_BATON || self->client->ps.weapon > WP_SABER) 
-			return -1;
-		else
-			return 0;
-	}
-
-	if (self->client->ps.weaponstate == WEAPON_CHARGING ||
-		self->client->ps.weaponstate == WEAPON_CHARGING_ALT)
-	{ //don't autodefend when charging a weapon
-		return -1;
 	}
 
 	return 1;
@@ -3523,6 +3523,7 @@ void ForceThrow( gentity_t *self, qboolean pull )
 		{
 			int modPowerLevel = powerLevel;
 
+	
 			if (push_list[x]->client)
 			{
 				modPowerLevel = WP_AbsorbConversion(push_list[x], push_list[x]->client->ps.fd.forcePowerLevel[FP_ABSORB], self, powerUse, powerLevel, forcePowerNeeded[self->client->ps.fd.forcePowerLevel[powerUse]][powerUse]);
@@ -3548,7 +3549,6 @@ void ForceThrow( gentity_t *self, qboolean pull )
 				int otherPushPower = push_list[x]->client->ps.fd.forcePowerLevel[powerUse];
 				qboolean canPullWeapon = qtrue;
 				float dirLen = 0;
-				const int CanCounter = CanCounterThrow(push_list[x], self, pull);
 
 				if ( g_debugMelee.integer )
 				{
@@ -3565,7 +3565,7 @@ void ForceThrow( gentity_t *self, qboolean pull )
 				if (push_list[x]->client->pers.cmd.forwardmove ||
 					push_list[x]->client->pers.cmd.rightmove)
 				{ //if you are moving, you get one less level of defense
-					otherPushPower--; //LODA
+					otherPushPower--;
 
 					if (otherPushPower < 0)
 					{
@@ -3573,80 +3573,68 @@ void ForceThrow( gentity_t *self, qboolean pull )
 					}
 				}
 
-				if (otherPushPower) {
-					if (CanCounter > 0)
+				if (otherPushPower && CanCounterThrow(push_list[x], self, pull))
+				{
+					if ( pull )
 					{
-						if ( pull )
-						{
-							G_Sound( push_list[x], CHAN_BODY, G_SoundIndex( "sound/weapons/force/pull.wav" ) );
-							push_list[x]->client->ps.forceHandExtend = HANDEXTEND_FORCEPULL;
-							push_list[x]->client->ps.forceHandExtendTime = level.time + 400;
-						}
-						else
-						{
-							G_Sound( push_list[x], CHAN_BODY, G_SoundIndex( "sound/weapons/force/push.wav" ) );
-							push_list[x]->client->ps.forceHandExtend = HANDEXTEND_FORCEPUSH;
-							push_list[x]->client->ps.forceHandExtendTime = level.time + 1000;
-						}
-						push_list[x]->client->ps.powerups[PW_DISINT_4] = push_list[x]->client->ps.forceHandExtendTime + 200;
+						G_Sound( push_list[x], CHAN_BODY, G_SoundIndex( "sound/weapons/force/pull.wav" ) );
+						push_list[x]->client->ps.forceHandExtend = HANDEXTEND_FORCEPULL;
+						push_list[x]->client->ps.forceHandExtendTime = level.time + 400;
+					}
+					else
+					{
+						G_Sound( push_list[x], CHAN_BODY, G_SoundIndex( "sound/weapons/force/push.wav" ) );
+						push_list[x]->client->ps.forceHandExtend = HANDEXTEND_FORCEPUSH;
+						push_list[x]->client->ps.forceHandExtendTime = level.time + 1000;
+					}
+					push_list[x]->client->ps.powerups[PW_DISINT_4] = push_list[x]->client->ps.forceHandExtendTime + 200;
 
-						if (pull)
+					if (pull)
+					{
+						push_list[x]->client->ps.powerups[PW_PULL] = push_list[x]->client->ps.powerups[PW_DISINT_4];
+					}
+					else
+					{
+						push_list[x]->client->ps.powerups[PW_PULL] = 0;
+					}
+
+					//Make a counter-throw effect
+
+					if (otherPushPower >= modPowerLevel)
+					{
+						pushPowerMod = 0;
+						canPullWeapon = qfalse;
+					}
+					else
+					{
+						int powerDif = (modPowerLevel - otherPushPower);
+
+						if (powerDif >= 3)
 						{
-							push_list[x]->client->ps.powerups[PW_PULL] = push_list[x]->client->ps.powerups[PW_DISINT_4];
+							pushPowerMod -= pushPowerMod*0.2;
 						}
-						else
+						else if (powerDif == 2)
 						{
-							push_list[x]->client->ps.powerups[PW_PULL] = 0;
+							pushPowerMod -= pushPowerMod*0.4;
+						}
+						else if (powerDif == 1)
+						{
+							pushPowerMod -= pushPowerMod*0.8;
 						}
 
-						//Make a counter-throw effect
-
-						if (otherPushPower >= modPowerLevel)
+						if (pushPowerMod < 0)
 						{
 							pushPowerMod = 0;
-							canPullWeapon = qfalse;
 						}
-						else
-						{
-							int powerDif = (modPowerLevel - otherPushPower);
-
-							//Really dont know what type of person would write it this way
-							if (powerDif >= 3)
-							{
-								pushPowerMod -= pushPowerMod*0.2;
-							}
-							else if (powerDif == 2)
-							{
-								pushPowerMod -= pushPowerMod*0.4;
-							}
-							else if (powerDif == 1)
-							{
-								pushPowerMod -= pushPowerMod*0.8;
-							}
-
-							if (pushPowerMod < 0)
-							{
-								pushPowerMod = 0;
-							}
-						}
-					}
-					else if (CanCounter == -1) {
-						//What if they are already absorbing tho?
-						if (g_tweakForce.integer & FT_WEAPON_PULLRESIST) //The only reason we cant counter is because of our weapon fire/charge, so weaken the pull/push strength
-							pushPowerMod *= 0.5f;
 					}
 				}
 
 				//shove them
 				if ( pull )
 				{
-					int weaponPullDist = 256;
-					if (g_tweakForce.integer & FT_NERFED_WEAPPULL && !(push_list[x]->client->ps.fd.forcePowersActive & (1 << FP_RAGE))) //And they are not in dark rage?
-						weaponPullDist = 128;
-
 					VectorSubtract( self->client->ps.origin, thispush_org, pushDir );
 
-					if (push_list[x]->client && VectorLength(pushDir) <= weaponPullDist) //LODA
+					if (push_list[x]->client && VectorLength(pushDir) <= 256)
 					{
 						int randfact = 0;
 
@@ -3961,8 +3949,9 @@ void ForceThrow( gentity_t *self, qboolean pull )
 
 void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 {
-	//const int wasActive = self->client->ps.fd.forcePowersActive; //what an odd way of doing this isntead of moving the bitremove to after the switch
-	//self->client->ps.fd.forcePowersActive &= ~( 1 << forcePower );
+	int wasActive = self->client->ps.fd.forcePowersActive;
+
+	self->client->ps.fd.forcePowersActive &= ~( 1 << forcePower );
 
 	switch( (int)forcePower )
 	{
@@ -3973,7 +3962,7 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 	case FP_LEVITATION:
 		break;
 	case FP_SPEED:
-		if (self->client->ps.fd.forcePowersActive & (1 << FP_SPEED))
+		if (wasActive & (1 << FP_SPEED))
 		{
 			G_MuteSound(self->client->ps.fd.killSoundEntIndex[TRACK_CHANNEL_2-50], CHAN_VOICE);
 		}
@@ -3983,7 +3972,7 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 	case FP_PULL:
 		break;
 	case FP_TELEPATHY:
-		if (self->client->ps.fd.forcePowersActive & (1 << FP_TELEPATHY))
+		if (wasActive & (1 << FP_TELEPATHY))
 		{
 			G_Sound( self, CHAN_AUTO, G_SoundIndex("sound/weapons/force/distractstop.wav") );
 		}
@@ -3993,7 +3982,7 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 		self->client->ps.fd.forceMindtrickTargetIndex4 = 0;
 		break;
 	case FP_SEE:
-		if (self->client->ps.fd.forcePowersActive & (1 << FP_SEE))
+		if (wasActive & (1 << FP_SEE))
 		{
 			G_MuteSound(self->client->ps.fd.killSoundEntIndex[TRACK_CHANNEL_5-50], CHAN_VOICE);
 		}
@@ -4006,7 +3995,7 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 			g_entities[self->client->ps.fd.forceGripEntityNum].inuse &&
 			(level.time - g_entities[self->client->ps.fd.forceGripEntityNum].client->ps.fd.forceGripStarted) > 500)
 		{ //if we had our throat crushed in for more than half a second, gasp for air when we're let go
-			if (self->client->ps.fd.forcePowersActive & (1 << FP_GRIP))
+			if (wasActive & (1 << FP_GRIP))
 			{
 				G_EntitySound( &g_entities[self->client->ps.fd.forceGripEntityNum], CHAN_VOICE, G_SoundIndex("*gasp.wav") );
 			}
@@ -4046,19 +4035,19 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 		break;
 	case FP_RAGE:
 		self->client->ps.fd.forceRageRecoveryTime = level.time + 10000;
-		if (self->client->ps.fd.forcePowersActive & (1 << FP_RAGE))
+		if (wasActive & (1 << FP_RAGE))
 		{
 			G_MuteSound(self->client->ps.fd.killSoundEntIndex[TRACK_CHANNEL_3-50], CHAN_VOICE);
 		}
 		break;
 	case FP_ABSORB:
-		if (self->client->ps.fd.forcePowersActive & (1 << FP_ABSORB))
+		if (wasActive & (1 << FP_ABSORB))
 		{
 			G_MuteSound(self->client->ps.fd.killSoundEntIndex[TRACK_CHANNEL_3-50], CHAN_VOICE);
 		}
 		break;
 	case FP_PROTECT:
-		if (self->client->ps.fd.forcePowersActive & (1 << FP_PROTECT))
+		if (wasActive & (1 << FP_PROTECT))
 		{
 			G_MuteSound(self->client->ps.fd.killSoundEntIndex[TRACK_CHANNEL_3-50], CHAN_VOICE);
 		}
@@ -4086,8 +4075,6 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 	default:
 		break;
 	}
-
-	self->client->ps.fd.forcePowersActive &= ~(1 << forcePower);
 }
 
 void DoGripAction(gentity_t *self, forcePowers_t forcePower)
@@ -4484,7 +4471,7 @@ static void WP_ForcePowerRun( gentity_t *self, forcePowers_t forcePower, usercmd
 		break;
 	case FP_SPEED:
 		//This is handled in PM_WalkMove and PM_StepSlideMove
-		if (self->client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_BHOP) {
+		if (self->client->ps.stats[STAT_ONLYBHOP]) {
 			WP_ForcePowerStop( self, forcePower );
 			break;
 		}
@@ -4538,7 +4525,7 @@ static void WP_ForcePowerRun( gentity_t *self, forcePowers_t forcePower, usercmd
 			WP_ForcePowerStop(self, forcePower);
 			break;
 		}
-		if (self->client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_BHOP) {
+		if (self->client->ps.stats[STAT_ONLYBHOP]) {
 			WP_ForcePowerStop( self, forcePower );
 			break;
 		}

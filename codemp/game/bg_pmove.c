@@ -319,7 +319,6 @@ qboolean BG_KnockDownable(playerState_t *ps)
 	return qtrue;
 }
 
-extern qboolean BG_InKnockDown(int anim);
 qboolean BG_CanJetpack(playerState_t *ps)
 {
 	if (!(ps->stats[STAT_HOLDABLE_ITEMS] & (1 << HI_JETPACK)))
@@ -332,8 +331,6 @@ qboolean BG_CanJetpack(playerState_t *ps)
 		return qfalse;
 	if (BG_InSpecialJump(ps->legsAnim))
 		return qfalse;	
-	if (BG_InKnockDown(ps->legsAnim))
-		return qfalse;
 	return qtrue;
 }
 
@@ -1183,7 +1180,7 @@ static void PM_Friction( void ) {
 		if ( pm->waterlevel <= 1 ) {
 			if (pml.walking && !(pml.groundTrace.surfaceFlags & SURF_SLICK) && (moveStyle != MV_SLICK || (pm->cmd.buttons & BUTTON_WALKING))) { //Slick style here potentially
 				// if getting knocked back, no friction
-				if ( ! (pm->ps->pm_flags & PMF_TIME_KNOCKBACK) ) { //GB?
+				if ( ! (pm->ps->pm_flags & PMF_TIME_KNOCKBACK) ) {
 					control = speed < pm_stopspeed ? pm_stopspeed : speed;
 					drop += control*realfriction*pml.frametime;
 				}
@@ -1704,7 +1701,6 @@ qboolean PM_AdjustAngleForWallRunUp( playerState_t *ps, usercmd_t *ucmd, qboolea
 			}
 		}
 
-		//Forwardmove is 0 here when it shouldnt be with lowfps due to chopping
 		if ( //ucmd->upmove <= 0 && 
 			ps->legsTimer > 0 &&
 			ucmd->forwardmove > 0 &&
@@ -1764,9 +1760,7 @@ qboolean PM_AdjustAngleForWallRunUp( playerState_t *ps, usercmd_t *ucmd, qboolea
 						}
 					}
 				}
-				if (pmove_fixed.integer || (ps->stats[STAT_RACEMODE] && pml.msec == 16)) { //chopping, chopped
-				}
-				else//JAPRO Fix Pmove Wallrun, only if they are in pmove or racemode
+				if (!pmove_fixed.integer)//JAPRO Fix Pmove Wallrun, only if they are in pmove or racemode
 					ucmd->forwardmove = 0;
 				return qtrue;
 			}
@@ -2209,9 +2203,9 @@ static qboolean PM_CheckJump( void )
 						{
 //JAPRO - Serverside - OnlyBhop - Start
 #ifdef _GAME
-							if ((g_onlyBhop.integer == 1) || ((g_onlyBhop.integer > 1) && client->pers.onlyBhop) || (client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_BHOP))
+							if ((g_onlyBhop.integer == 1) || ((g_onlyBhop.integer > 1) && client->pers.onlyBhop) || client->ps.stats[STAT_ONLYBHOP])
 #else
-							if (cgs.isJAPro && ((cgs.jcinfo & JAPRO_CINFO_BHOP1) || ((cgs.jcinfo & JAPRO_CINFO_BHOP2) && cg_onlyBhop.integer) || (pm->ps->stats[STAT_ONLYBHOP] & JAPRO_RESTRICT_BHOP)))
+							if (cgs.isJAPro && ((cgs.jcinfo & JAPRO_CINFO_BHOP1) || ((cgs.jcinfo & JAPRO_CINFO_BHOP2) && cg_onlyBhop.integer) || pm->ps->stats[STAT_ONLYBHOP]))
 #endif
 							{
 								pm->cmd.upmove = 0;
@@ -2339,7 +2333,7 @@ static qboolean PM_CheckJump( void )
 						}
 					}
 
-					if (moveStyle == MV_QW || moveStyle == MV_PJK) {//Forcejump rampjump
+					if (moveStyle == 2 || moveStyle == 5) {//Forcejump rampjump
 						//need to scale this down, start with height velocity (based on max force jump height) and scale down to regular jump vel
 						float realForceJumpHeight = forceJumpHeight[pm->ps->fd.forcePowerLevel[FP_LEVITATION]] * (pm->ps->stats[STAT_LASTJUMPSPEED] / (float)JUMP_VELOCITY);
 						
@@ -2441,9 +2435,9 @@ static qboolean PM_CheckJump( void )
 		qboolean allowWallGrabs = qtrue;
 
 #ifdef _GAME
-		if (pm->ps->stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_BHOP)
+		if (pm->ps->stats[STAT_ONLYBHOP])
 #else
-		if (cgs.isJAPro && pm->ps->stats[STAT_ONLYBHOP] & JAPRO_RESTRICT_BHOP)
+		if (cgs.isJAPro && pm->ps->stats[STAT_ONLYBHOP])
 #endif
 		{
 			allowWallRuns = qfalse;
@@ -4531,9 +4525,9 @@ static int PM_TryRoll( void )
 		}
 
 #ifdef _GAME
-	if (!(g_tweakSaber.integer & ST_ALLOW_ROLLCANCEL) || pm->ps->stats[STAT_RACEMODE]) {
+	if (!(g_tweakSaber.integer & ST_ALLOW_ROLLCANCEL)) {
 #else
-	if (!(cgs.jcinfo & JAPRO_CINFO_ROLLCANCEL) || pm->ps->stats[STAT_RACEMODE]) {
+	if (!(cgs.jcinfo & JAPRO_CINFO_ROLLCANCEL)) {
 #endif
 		if ( BG_SaberInAttack( pm->ps->saberMove ) || BG_SaberInSpecialAttack( pm->ps->torsoAnim ) 
 			|| BG_SpinningSaberAnim( pm->ps->legsAnim ) 
@@ -5511,7 +5505,6 @@ Sets mins, maxs, and pm->ps->viewheight
 static void PM_CheckDuck (void)
 {
 //	trace_t	trace;
-	int oldHeight;
 
 	if ( pm->ps->m_iVehicleNum > 0 && pm->ps->m_iVehicleNum < ENTITYNUM_NONE )
 	{//riding a vehicle or are a vehicle
@@ -5590,8 +5583,6 @@ static void PM_CheckDuck (void)
 			return;
 		}
 
-		oldHeight = pm->maxs[2];
-
 		if (BG_InRoll(pm->ps, pm->ps->legsAnim) && !BG_KickingAnim(pm->ps->legsAnim))
 		{
 			pm->maxs[2] = pm->ps->crouchheight; //CROUCH_MAXS_2;
@@ -5621,53 +5612,13 @@ static void PM_CheckDuck (void)
 			pm->ps->forceHandExtend == HANDEXTEND_PRETHROWN ||
 			pm->ps->forceHandExtend == HANDEXTEND_POSTTHROWN)
 		{	// duck
-
-			//half-life/jasp crouch climb thing
-			if (pm->ps->groundEntityNum == ENTITYNUM_NONE && ((pm->ps->stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_CROUCHJUMP) || pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_SP)) {
-				trace_t sptrace;
-				pm->maxs[2] = pm->ps->crouchheight;
-				pm->ps->viewheight = pm->ps->crouchheight + STANDARD_VIEWHEIGHT_OFFSET; //CROUCH_VIEWHEIGHT
-				pm->trace(&sptrace, pm->ps->origin, pm->mins, pm->maxs, pm->ps->origin, pm->ps->clientNum, pm->tracemask);
-				if (!(pm->ps->pm_flags & PMF_DUCKED) && !sptrace.allsolid && pm->ps->velocity[2] >= 0) {
-					pm->ps->eFlags ^= EF_TELEPORT_BIT;
-					//pm->ps->origin[2] += oldHeight - pm->maxs[2];
-					pm->ps->origin[2] -= oldHeight - pm->maxs[2];
-#ifdef _CGAME
-					cg.predictedPlayerState.origin[2] += oldHeight - pm->maxs[2];
-#endif
-				}
-
-			}
-
 			pm->ps->pm_flags |= PMF_DUCKED;
 		}
 		else
 		{	// stand up if possible 
 			if (pm->ps->pm_flags & PMF_DUCKED)
 			{
-				if ((pm->ps->stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_CROUCHJUMP) || pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_SP) {
-					trace_t sptrace;
-					if (pm->ps->groundEntityNum == ENTITYNUM_NONE && PM_GroundDistance() >= (oldHeight - pm->maxs[2]) && pm->ps->velocity[2] >= 0) {
-						pm->maxs[2] = pm->ps->standheight;
-						pm->ps->origin[2] += oldHeight - pm->maxs[2];
-						pm->trace(&sptrace, pm->ps->origin, pm->mins, pm->maxs, pm->ps->origin, pm->ps->clientNum, pm->tracemask);
-						if (!sptrace.allsolid) {
-							pm->ps->eFlags ^= EF_TELEPORT_BIT;
-							pm->ps->pm_flags &= ~PMF_DUCKED;
-						}
-						else {
-							pm->ps->origin[2] -= oldHeight - pm->maxs[2]; //undo it so we don't clip thru the floor
-						}
-					}
-					else {
-						pm->maxs[2] = pm->ps->standheight;
-						pm->trace(&sptrace, pm->ps->origin, pm->mins, pm->maxs, pm->ps->origin, pm->ps->clientNum, pm->tracemask);
-						if (!sptrace.allsolid) {
-							pm->ps->pm_flags &= ~PMF_DUCKED;
-						}
-					}
-				}
-				else if ( PM_CanStand() ) {
+				if ( PM_CanStand() ) {
 					pm->maxs[2] = pm->ps->standheight;
 					pm->ps->pm_flags &= ~PMF_DUCKED;
 				}
@@ -8705,12 +8656,7 @@ if (pm->ps->duelInProgress)
 	}
 
 	if ( pm->ps->weaponTime > 0 ) {
-		//This is the saddest hack we have seen yet
-		if (pm->ps->stats[STAT_RACEMODE] && pm->ps->stats[STAT_MOVEMENTSTYLE] == MV_JETPACK && pm->ps->weapon == WP_DET_PACK && pm->ps->hasDetPackPlanted && /*!(pm->cmd.buttons & BUTTON_ATTACK) &&*/ pm->cmd.buttons & BUTTON_ALT_ATTACK) {
-		}
-		else {
-			return;
-		}
+		return;
 	}
 
 	if (pm->ps->weapon == WP_DISRUPTOR &&
@@ -9187,20 +9133,10 @@ if (pm->ps->duelInProgress)
 		}
 	}
 
-#if _GAME
-	if (!(g_tweakForce.integer & FT_NORAGEFIRERATE) || pm->ps->weapon == WP_MELEE || pm->ps->weapon == WP_SABER) {
-		if (pm->ps->fd.forcePowersActive & (1 << FP_RAGE))
-			addTime *= 0.75;
-		else if (pm->ps->fd.forceRageRecoveryTime > pm->cmd.serverTime)
-			addTime *= 1.5;
-	}
-
-	if (pm->ps->stats[STAT_RACEMODE]) {
-		if (((gentity_t *)pm_entSelf)->client->pers.haste)
-			addTime /= 1.3;
-	}
-#endif
-
+	if (pm->ps->fd.forcePowersActive & (1 << FP_RAGE))
+		addTime *= 0.75;
+	else if (pm->ps->fd.forceRageRecoveryTime > pm->cmd.serverTime)
+		addTime *= 1.5;
 	pm->ps->weaponTime += addTime;
 }
 
@@ -10038,14 +9974,7 @@ void BG_AdjustClientSpeed(playerState_t *ps, usercmd_t *cmd, int svTime)
 			ps->speed *= 0.85f;
 			break;
 		case FORCE_LEVEL_3:
-#if _GAME
-			if (g_tweakSaber.integer & ST_NO_REDCHAIN && !ps->stats[STAT_RACEMODE])
-#else
-			if (cgs.isJAPro && cgs.jcinfo & JAPRO_CINFO_NOREDCHAIN && !cg.predictedPlayerState.stats[STAT_RACEMODE])
-#endif
-				ps->speed *= 0.70f;
-			else
-				ps->speed *= 0.55f;
+			ps->speed *= 0.55f;
 			break;
 		default:
 			break;
@@ -12130,7 +12059,6 @@ void PmoveSingle (pmove_t *pmove) {
 					PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
 				}
 #endif
-				//if emotedisable baseduel, lock player view here like in basejk
 				pm->cmd.rightmove = 0;
 				pm->cmd.upmove = 0;
 				pm->cmd.forwardmove = 0;
@@ -12138,7 +12066,6 @@ void PmoveSingle (pmove_t *pmove) {
 			}
 			else if ( pm->ps->legsTimer > 0 || pm->ps->torsoTimer > 0 )
 			{
-			//if emotedisable baseduel, lock player here like in basejk
 #ifdef CGAME
 				if (cgs.isJAPlus || cgs.isJAPro)
 				{
@@ -12270,6 +12197,8 @@ void PmoveSingle (pmove_t *pmove) {
 
 	PM_CmdForSaberMoves(&pm->cmd);
 
+	BG_AdjustClientSpeed(pm->ps, &pm->cmd, pm->cmd.serverTime);
+
 	if ( pm->ps->stats[STAT_HEALTH] <= 0 ) {
 		pm->tracemask &= ~CONTENTS_BODY;	// corpses can fly through bodies
 	}
@@ -12279,8 +12208,6 @@ void PmoveSingle (pmove_t *pmove) {
 	if ( abs( pm->cmd.forwardmove ) > 64 || abs( pm->cmd.rightmove ) > 64 ) {
 		pm->cmd.buttons &= ~BUTTON_WALKING;
 	}
-
-	BG_AdjustClientSpeed(pm->ps, &pm->cmd, pm->cmd.serverTime); //move this down 2 blocks
 
 	// set the talk balloon flag
 	if ( pm->cmd.buttons & BUTTON_TALK ) {
@@ -12411,21 +12338,20 @@ void PmoveSingle (pmove_t *pmove) {
 	PM_AdjustAngleForWallRun( pm->ps, &pm->cmd, qtrue );
 
 //[JAPRO - Serverside + Clientside - Saber - Spin Red DFA , Spin Backslash - Start]
+	if (pm->ps->saberMove == LS_A_BACKSTAB)
+		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
+
 #ifdef _GAME
-	if (pm->ps->saberMove == LS_A_BACKSTAB && !(g_tweakSaber.integer & ST_SPINBACKSLASH))
+	if (pm->ps->saberMove == LS_A_JUMP_T__B_ && !(g_tweakSaber.integer & ST_SPINREDDFA))
 		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
-	else if (pm->ps->saberMove == LS_A_JUMP_T__B_ && !(g_tweakSaber.integer & ST_SPINREDDFA))
+	else if ((pm->ps->saberMove == LS_A_BACK_CR || pm->ps->saberMove == LS_A_BACK)  && !(g_tweakSaber.integer & ST_SPINBACKSLASH))
 		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
-	else if ((pm->ps->saberMove == LS_A_BACK_CR || pm->ps->saberMove == LS_A_BACK) && !(g_tweakSaber.integer & ST_SPINBACKSLASH))
-		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
-	else if (pm->ps->saberMove == LS_A_LUNGE && (!(g_tweakSaber.integer & ST_JK2LUNGE) || pm->ps->stats[STAT_RACEMODE]))
+	else if	(pm->ps->saberMove == LS_A_LUNGE && (!(g_tweakSaber.integer & ST_JK2LUNGE) || pm->ps->stats[STAT_RACEMODE]))
 		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
 #else
-	if (pm->ps->saberMove == LS_A_BACKSTAB && !(cgs.jcinfo & JAPRO_CINFO_BACKSLASH))
+	if (pm->ps->saberMove == LS_A_JUMP_T__B_ && !(cgs.jcinfo & JAPRO_CINFO_REDDFA))
 		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
-	else if (pm->ps->saberMove == LS_A_JUMP_T__B_ && !(cgs.jcinfo & JAPRO_CINFO_REDDFA))
-		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
-	else if ((pm->ps->saberMove == LS_A_BACK_CR || pm->ps->saberMove == LS_A_BACK) && !(cgs.jcinfo & JAPRO_CINFO_BACKSLASH))
+	else if (pm->ps->saberMove == LS_A_BACK_CR || pm->ps->saberMove == LS_A_BACK && !(cgs.jcinfo & JAPRO_CINFO_BACKSLASH))
 		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
 	else if (pm->ps->saberMove == LS_A_LUNGE && (!(cgs.jcinfo & JAPRO_CINFO_JK2LUNGE)) || pm->ps->stats[STAT_RACEMODE])
 		PM_SetPMViewAngle(pm->ps, pm->ps->viewangles, &pm->cmd);
@@ -13198,11 +13124,11 @@ void Pmove (pmove_t *pmove) {
 
 	pmove->ps->pmove_framecount = (pmove->ps->pmove_framecount+1) & ((1<<PS_PMOVEFRAMECOUNTBITS)-1);
 
-	//if (pmove->ps->stats[STAT_RACEMODE] /*pm->ps->clientNum < MAX_CLIENTS*/) {//racemode only?
+	if (pmove->ps->stats[STAT_RACEMODE] /*pm->ps->clientNum < MAX_CLIENTS*/) {//racemode only?
 		pmove->cmd.angles[ROLL] = 0;
 		pmove->ps->viewangles[ROLL] = 0;
 		pmove->ps->delta_angles[ROLL] = 0;
-	//}
+	}
 
 	// chop the move up if it is too long, to prevent framerate
 	// dependent behavior
@@ -13210,14 +13136,9 @@ void Pmove (pmove_t *pmove) {
 		int		msec;
 
 		msec = finalTime - pmove->ps->commandTime;
-		if (pmove->ps->stats[STAT_RACEMODE]) { //Using float now
+		if (pmove->ps->stats[STAT_RACEMODE] && BG_InRollFixed(pmove->ps, pmove->ps->legsAnim)) { //Using float now
 			if ( msec > 8 ) {
-				if (BG_InRollFixed(pmove->ps, pmove->ps->legsAnim)) {
-					msec = 8;
-				}
-				else if (msec > 16) {
-					msec = 16;
-				}
+				msec = 8;
 			}
 			//Com_Printf("Chopping\n");
 		}

@@ -3832,6 +3832,7 @@ static QINLINE int SaberKickTweak(gentity_t *self)
 }
 
 qboolean WP_SaberCanBlockSwing(int ourStr, int attackStr);
+
 static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBladeNum, vec3_t saberStart, vec3_t saberEnd, qboolean doInterpolate, int trMask, qboolean extrapolate )
 {
 	static trace_t tr;
@@ -4182,7 +4183,7 @@ static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBl
 		else
 //JAPRO - Serverside - Japro Saber Cleanup MP saber damages - Start
 		{
-			dmg = SABER_HITDAMAGE;//35
+			dmg = SABER_HITDAMAGE;
 
 			if (self->client->ps.forceHandExtend == HANDEXTEND_DUELCHALLENGE)//Remove dmg from swings while duel challenging
 				dmg = 1;
@@ -4215,8 +4216,6 @@ static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBl
 					dmg = G_GetAttackDamage(self, 2, 50, 0.5f);
 				else if (self->client->ps.saberMove == LS_A_BACKFLIP_ATK)//back staff dfa
 					dmg = G_GetAttackDamage(self, 2, 50, 0.5f);
-				else if (self->client->ps.saberMove >= LS_KICK_F_AIR && self->client->ps.saberMove <= LS_KICK_L_AIR)
-					dmg = 40;
 				else//Normal Staff Swing
 					dmg = 30;
 			}
@@ -4252,7 +4251,7 @@ static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBl
 
 			else if (self->client->ps.fd.saberAnimLevel == SS_STRONG)//Red Style 
 			{
-				if (self->client->ps.saberMove == LS_A_T2B) { //Red Vert
+				if (self->client->ps.saberMove == LS_A_T2B) { //this is a vert i think?
 					if (g_tweakSaber.integer & ST_JK2_DMGSYSTEM)
 						dmg = 100*g_redDamageScale.value;
 					else
@@ -4274,7 +4273,7 @@ static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBl
 					if (g_tweakSaber.integer & ST_JK2_DMGSYSTEM)
 						dmg = 120*g_redDFADamageScale.value;
 					else
-						dmg = G_GetAttackDamage(self, 2, 70*g_redDFADamageScale.value, 0.65f);
+						dmg = G_GetAttackDamage(self, 2, 60*g_redDFADamageScale.value, 0.65f);
 				}
 				else if (self->client->ps.saberMove == LS_A3_SPECIAL)
 					dmg = 20*g_redDamageScale.value;
@@ -4319,8 +4318,6 @@ static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBl
 					dmg = G_GetAttackDamage(self, 2, 50, 0.5f);
 				else if (self->client->ps.saberMove == LS_A_BACKFLIP_ATK)//Switched from back staff dfa
 					dmg = G_GetAttackDamage(self, 2, 50, 0.5f);
-				else if (self->client->ps.saberMove >= LS_KICK_F_AIR && self->client->ps.saberMove <= LS_KICK_L_AIR)
-					dmg = 55;
 				else if (self->client->ps.saberMove == LS_A_T2B) {//now what is this
 					if (g_tweakSaber.integer & ST_JK2_DMGSYSTEM)
 						dmg = 60*g_yellowDamageScale.value;
@@ -4664,15 +4661,10 @@ static QINLINE qboolean CheckSaberDamage(gentity_t *self, int rSaberNum, int rBl
 		self->client->ps.saberIdleWound = level.time + g_saberDmgDelay_Idle.integer;
 
 		//Might as well make this a new cvar to avoid any possible conflicts, also able to make it an array much easier.
-		//Well this has to be a 2d array to have debounce specific to attacker-target?
-		if (self->client && g_saberDmgDelay_Hit.integer) { //g_entities[tr.entityNum].client && tr.entityNum < MAX_CLIENTS
-			int targetNum = tr.entityNum; //Ranges from 0 to MAX_CLIENTS(32)
-			if (targetNum > MAX_CLIENTS || targetNum < 0)
-				targetNum = MAX_CLIENTS;
-			if (self->client->saberHitWound[self->client->ps.clientNum][targetNum] > level.time && self->client->saberHitWound[self->client->ps.clientNum][targetNum] != level.time + g_saberDmgDelay_Hit.integer) { //maybe allow same hits from leveltime?
-				return qfalse; //Yeah this is just a failure, dunno
-			}
-			self->client->saberHitWound[self->client->ps.clientNum][targetNum] = level.time + g_saberDmgDelay_Hit.integer;
+		if (self->client && g_entities[tr.entityNum].client && tr.entityNum < MAX_CLIENTS && g_saberDmgDelay_Hit.integer) {
+			if (self->client->saberHitWound[tr.entityNum] > level.time)
+				return qfalse;
+			self->client->saberHitWound[tr.entityNum] = level.time + g_saberDmgDelay_Hit.integer;
 		}
 
 		didHit = qtrue;
@@ -5035,7 +5027,7 @@ blockStuff:
 			}
 		}
 
-		if (!(g_tweakSaber.integer & ST_NO_REDCHAIN) && ((selfSaberLevel < FORCE_LEVEL_3 && ((tryDeflectAgain && Q_irand(1, 10) <= 3) || (!tryDeflectAgain && Q_irand(1, 10) <= 7))) || (Q_irand(1, 10) <= 1 && otherSaberLevel >= FORCE_LEVEL_3))
+		if ( ((selfSaberLevel < FORCE_LEVEL_3 && ((tryDeflectAgain && Q_irand(1, 10) <= 3) || (!tryDeflectAgain && Q_irand(1, 10) <= 7))) || (Q_irand(1, 10) <= 1 && otherSaberLevel >= FORCE_LEVEL_3))
 			&& !PM_SaberInBounce(self->client->ps.saberMove)
 
 			&& !PM_SaberInBrokenParry(otherOwner->client->ps.saberMove)
@@ -5082,7 +5074,7 @@ blockStuff:
 
 			didDefense = qtrue;
 		}
-		else if (!(g_tweakSaber.integer & ST_NO_REDCHAIN) && (selfSaberLevel > FORCE_LEVEL_2 || unblockable) && //if we're doing a special attack, we can send them into a broken parry too (MP only)
+		else if ((selfSaberLevel > FORCE_LEVEL_2 || unblockable) && //if we're doing a special attack, we can send them into a broken parry too (MP only)
 				 ( otherOwner->client->ps.fd.forcePowerLevel[FP_SABER_DEFENSE] < selfSaberLevel || (otherOwner->client->ps.fd.forcePowerLevel[FP_SABER_DEFENSE] == selfSaberLevel && (Q_irand(1, 10) >= otherSaberLevel*1.5 || unblockable)) ) &&
 				 PM_SaberInParry(otherOwner->client->ps.saberMove) &&
 				 !PM_SaberInBrokenParry(otherOwner->client->ps.saberMove) &&
@@ -5182,30 +5174,28 @@ blockStuff:
 				}
 				attackAdv = (attackStr+attackBonus+self->client->ps.fd.forcePowerLevel[FP_SABER_OFFENSE])-(defendStr+otherOwner->client->ps.fd.forcePowerLevel[FP_SABER_OFFENSE]);
 
-				if (!(g_tweakSaber.integer & ST_NO_REDCHAIN)) {
-					if (attackAdv > 1)
-					{//I won, he should knockaway
-						otherOwner->client->ps.saberMove = BG_BrokenParryForAttack(otherOwner->client->ps.saberMove);
-						otherOwner->client->ps.saberBlocked = BLOCKED_BOUNCE_MOVE;
-					}
-					else if (attackAdv > 0)
-					{//I won, he should bounce, I should continue
-						otherOwner->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
-					}
-					else if (attackAdv < 1)
-					{//I lost, I get knocked away
-						self->client->ps.saberMove = BG_BrokenParryForAttack(self->client->ps.saberMove);
-						self->client->ps.saberBlocked = BLOCKED_BOUNCE_MOVE;
-					}
-					else if (attackAdv < 0)
-					{//I lost, I bounce off
-						self->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
-					}
-					else
-					{//even, both bounce off
-						self->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
-						otherOwner->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
-					}
+				if ( attackAdv > 1 )
+				{//I won, he should knockaway
+					otherOwner->client->ps.saberMove = BG_BrokenParryForAttack( otherOwner->client->ps.saberMove );
+					otherOwner->client->ps.saberBlocked = BLOCKED_BOUNCE_MOVE;
+				}
+				else if ( attackAdv > 0 )
+				{//I won, he should bounce, I should continue
+					otherOwner->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
+				}
+				else if ( attackAdv < 1 )
+				{//I lost, I get knocked away
+					self->client->ps.saberMove = BG_BrokenParryForAttack( self->client->ps.saberMove );
+					self->client->ps.saberBlocked = BLOCKED_BOUNCE_MOVE;
+				}
+				else if ( attackAdv < 0 )
+				{//I lost, I bounce off
+					self->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
+				}
+				else
+				{//even, both bounce off
+					self->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
+					otherOwner->client->ps.saberBlocked = BLOCKED_ATK_BOUNCE;
 				}
 
 				didOffense = qtrue;
@@ -5236,7 +5226,7 @@ blockStuff:
 			{
 				qboolean crushTheParry = qfalse;
 
-				if (unblockable && !(g_tweakSaber.integer & ST_NO_REDCHAIN))
+				if (unblockable)
 				{ //It's unblockable. So send us into a broken parry immediately.
 					crushTheParry = qtrue;
 				}
@@ -5254,7 +5244,7 @@ blockStuff:
 					otherOwner->client->ps.saberEventFlags |= SEF_PARRIED;
 					self->client->ps.saberEventFlags |= SEF_BLOCKED;
 
-					if (attackStr + self->client->ps.fd.forcePowerLevel[FP_SABER_OFFENSE] > otherIdleStr + otherOwner->client->ps.fd.forcePowerLevel[FP_SABER_DEFENSE] && !(g_tweakSaber.integer & ST_NO_REDCHAIN))
+					if ( attackStr+self->client->ps.fd.forcePowerLevel[FP_SABER_OFFENSE] > otherIdleStr+otherOwner->client->ps.fd.forcePowerLevel[FP_SABER_DEFENSE] )
 					{
 						crushTheParry = qtrue;
 					}
@@ -5268,9 +5258,7 @@ blockStuff:
 				{ //they are attacking, and we managed to make them break
 					//Give them a parry, so we can later break it.
 					WP_SaberBlockNonRandom(otherOwner, tr.endpos, qfalse);
-
-					if (!(g_tweakSaber.integer & ST_NO_REDCHAIN))
-						crushTheParry = qtrue;
+					crushTheParry = qtrue;
 
 					if (otherOwner->client->ps.saberEntityNum) //make sure he has his saber still
 					{
@@ -5317,10 +5305,9 @@ blockStuff:
 							Com_Printf("Equal attack level bounce/deflection for clients %i and %i\n", self->s.number, otherOwner->s.number);
 						}
 #endif
-						if (!(g_tweakSaber.integer & ST_NO_REDCHAIN)) {
-							self->client->ps.saberEventFlags |= SEF_DEFLECTED;
-							otherOwner->client->ps.saberEventFlags |= SEF_DEFLECTED;
-						}
+
+						self->client->ps.saberEventFlags |= SEF_DEFLECTED;
+						otherOwner->client->ps.saberEventFlags |= SEF_DEFLECTED;
 					}
 					else if ((level.time - otherOwner->client->lastSaberStorageTime) < 500 && !unblockable) //make sure the stored saber data is updated
 					{ //They are higher, this means they can actually smash us into a broken parry
@@ -5340,9 +5327,7 @@ blockStuff:
 						}
 #endif
 
-						if (!(g_tweakSaber.integer & ST_NO_REDCHAIN)) {
-							otherOwner->client->ps.saberEventFlags &= ~SEF_BLOCKED;
-						}
+						otherOwner->client->ps.saberEventFlags &= ~SEF_BLOCKED;
 
 						didOffense = qtrue;
 					}
@@ -6955,9 +6940,6 @@ qboolean saberCheckKnockdown_BrokenParry(gentity_t *saberent, gentity_t *saberOw
 	if (!SaberSPStyle(saberOwner) && (g_tweakSaber.integer & ST_REDUCE_SABERBLOCK))
 		return qfalse; //Dont do this shit in MP dmgs i guess...
 
-	if (g_tweakSaber.integer & ST_NO_REDCHAIN)
-		return qfalse;
-
 	//Neither gets an advantage based on attack state, when it comes to knocking
 	//saber out of hand.
 	myAttack = G_SaberAttackPower(saberOwner, qfalse);
@@ -8130,7 +8112,7 @@ static void G_KickSomeMofos(gentity_t *ent)
 					VectorScale( kickDir, -1, kickDir );
 				}
 			}
-		case BOTH_JUMPATTACK7: //Japro staff bdfa kick
+			case BOTH_JUMPATTACK7: //Japro staff bdfa kick
 			kickDist += 20.0f;
 			//FIXME: push forward?
 			if ( elapsedTime >= 250 && remainingTime >= 250 )

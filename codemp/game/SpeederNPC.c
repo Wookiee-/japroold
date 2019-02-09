@@ -187,7 +187,7 @@ static void ProcessMoveCommands( Vehicle_t *pVeh )
 					}
 				}
 				//trap->Print("Prim fire boost\n");
-				parentPS->gravity = 1;// = pVeh->m_pVehicleInfo->turboSpeed;	// Instantly Jump To Turbo Speed gravboost
+				parentPS->gravity = 1;// = pVeh->m_pVehicleInfo->turboSpeed;	// Instantly Jump To Turbo Speed
 				parentPS->velocity[2] += 50; //RACESWOOP
 			}
 		}
@@ -236,7 +236,7 @@ static void ProcessMoveCommands( Vehicle_t *pVeh )
 #if 1
 	if ( curTime < pVeh->m_iGravTime )
 	{
-		parentPS->gravity = 1.0f; //gravboost vel2 min = 50? eh
+		parentPS->gravity = 1.0f;
 		if (parentPS)
 		{
 			parentPS->eFlags |= EF_JETPACK_ACTIVE;

@@ -140,41 +140,42 @@ AddTeamScore
  for gametype GT_TEAM the level.teamScores is updated in AddScore in g_combat.c
 ==============
 */
-void AddTeamScore(vec3_t origin, int team, int score, qboolean announceScore) {
-	int eventParm;
+void AddTeamScore(vec3_t origin, int team, int score) {
+	gentity_t	*te;
+
+	te = G_TempEntity(origin, EV_GLOBAL_TEAM_SOUND );
+	te->r.svFlags |= SVF_BROADCAST;
 
 	if ( team == TEAM_RED ) {
 		if ( level.teamScores[ TEAM_RED ] + score == level.teamScores[ TEAM_BLUE ] ) {
-			eventParm = GTS_TEAMS_ARE_TIED;//teams are tied sound
+			//teams are tied sound
+			te->s.eventParm = GTS_TEAMS_ARE_TIED;
 		}
-		else if ( level.teamScores[ TEAM_RED ] <= level.teamScores[ TEAM_BLUE ] && level.teamScores[ TEAM_RED ] + score > level.teamScores[ TEAM_BLUE ]) {
-			eventParm = GTS_REDTEAM_TOOK_LEAD;// red took the lead sound
+		else if ( level.teamScores[ TEAM_RED ] <= level.teamScores[ TEAM_BLUE ] &&
+					level.teamScores[ TEAM_RED ] + score > level.teamScores[ TEAM_BLUE ]) {
+			// red took the lead sound
+			te->s.eventParm = GTS_REDTEAM_TOOK_LEAD;
 		}
 		else {
-			eventParm = GTS_REDTEAM_SCORED;// red scored sound
+			// red scored sound
+			te->s.eventParm = GTS_REDTEAM_SCORED;
 		}
 	}
 	else {
 		if ( level.teamScores[ TEAM_BLUE ] + score == level.teamScores[ TEAM_RED ] ) {
-			eventParm = GTS_TEAMS_ARE_TIED;//teams are tied sound
+			//teams are tied sound
+			te->s.eventParm = GTS_TEAMS_ARE_TIED;
 		}
-		else if ( level.teamScores[ TEAM_BLUE ] <= level.teamScores[ TEAM_RED ] && level.teamScores[ TEAM_BLUE ] + score > level.teamScores[ TEAM_RED ]) {
-			eventParm = GTS_BLUETEAM_TOOK_LEAD;// blue took the lead sound
+		else if ( level.teamScores[ TEAM_BLUE ] <= level.teamScores[ TEAM_RED ] &&
+					level.teamScores[ TEAM_BLUE ] + score > level.teamScores[ TEAM_RED ]) {
+			// blue took the lead sound
+			te->s.eventParm = GTS_BLUETEAM_TOOK_LEAD;
 		}
 		else {
-			eventParm = GTS_BLUETEAM_SCORED;// blue scored sound
+			// blue scored sound
+			te->s.eventParm = GTS_BLUETEAM_SCORED;
 		}
 	}
-
-	if (announceScore || (eventParm != GTS_BLUETEAM_SCORED && eventParm != GTS_REDTEAM_SCORED)) { //Only announce score change if desired or important
-		gentity_t	*te;
-
-		te = G_TempEntity(origin, EV_GLOBAL_TEAM_SOUND );
-		te->r.svFlags |= SVF_BROADCAST;
-
-		te->s.eventParm = eventParm;
-	}
-
 	level.teamScores[ team ] += score;
 }
 
@@ -861,7 +862,7 @@ int Team_TouchOurFlag( gentity_t *ent, gentity_t *other, int team ) {
 	teamgame.last_capture_team = team;
 
 	// Increase the team's score
-	AddTeamScore(ent->s.pos.trBase, other->client->sess.sessionTeam, 1, qtrue);
+	AddTeamScore(ent->s.pos.trBase, other->client->sess.sessionTeam, 1);
 //	Team_ForceGesture(other->client->sess.sessionTeam);
 	//rww - don't really want to do this now. Mainly because performing a gesture disables your upper torso animations until it's done and you can't fire
 
@@ -1473,6 +1474,5 @@ Targets will be fired when someone spawns in on them.
 */
 void SP_team_CTF_bluespawn(gentity_t *ent) {
 }
-
 
 
