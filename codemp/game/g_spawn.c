@@ -135,6 +135,9 @@ field_t fields[] = {
 	{ "lostenemyscript",		FOFS( behaviorSet[BSET_LOSTENEMY] ),	F_STRING },//name of script to run
 	{ "message",				FOFS( message ),						F_STRING },
 	{ "mindtrickscript",		FOFS( behaviorSet[BSET_MINDTRICK] ),	F_STRING },//name of script to run
+
+	//Add mins/maxs here for logical trigger_multiples?
+
 	{ "model",					FOFS( model ),							F_STRING },
 	{ "model2",					FOFS( model2 ),							F_STRING },
 	{ "npc_target",				FOFS( NPC_target ),						F_STRING },
@@ -271,6 +274,7 @@ void SP_trigger_timer_start(gentity_t *self);//JAPRO Timers
 void SP_trigger_timer_checkpoint(gentity_t *self);
 void SP_trigger_timer_stop(gentity_t *self);
 void SP_trigger_newpush (gentity_t *ent);
+void SP_trigger_KOTH (gentity_t *ent);//JAPRO koth
 
 void SP_target_remove_powerups( gentity_t *ent );
 void SP_target_give (gentity_t *ent);
@@ -555,8 +559,8 @@ spawn_t	spawns[] = {
 	{ "info_player_start_blue",			qtrue,		SP_info_player_start_blue },
 	{ "info_player_start_red",			qtrue,		SP_info_player_start_red },
 	{ "info_siege_decomplete",			qtrue,		SP_info_siege_decomplete },
-	{ "info_siege_objective",			qtrue,		SP_info_siege_objective },
-	{ "info_siege_radaricon",			qtrue,		SP_info_siege_radaricon },
+	{ "info_siege_objective",			qfalse,		SP_info_siege_objective },
+	{ "info_siege_radaricon",			qfalse,		SP_info_siege_radaricon },
 	{ "item_botroam",					qtrue,		SP_item_botroam },
 	{ "light",							qfalse,		SP_light },
 	{ "misc_ammo_floor_unit",			qfalse,		SP_misc_ammo_floor_unit },
@@ -658,7 +662,7 @@ spawn_t	spawns[] = {
 	{ "point_combat",					qtrue,	SP_point_combat },
 	{ "ref_tag",						qtrue,	SP_reference_tag },
 	{ "ref_tag_huge",					qtrue,	SP_reference_tag },
-	{ "shooter_blaster",				qtrue,	SP_shooter_blaster },
+	{ "shooter_blaster",				qfalse,	SP_shooter_blaster },
 	{ "target_activate",				qtrue,	SP_target_activate },
 	{ "target_counter",					qtrue,	SP_target_counter },
 	{ "target_deactivate",				qtrue,	SP_target_deactivate },
@@ -695,6 +699,9 @@ spawn_t	spawns[] = {
 	{ "trigger_asteroid_field",			qfalse,	SP_trigger_asteroid_field },
 	{ "trigger_hurt",					qfalse,	SP_trigger_hurt },
 	{ "trigger_hyperspace",				qfalse,	SP_trigger_hyperspace },
+
+	{ "trigger_KOTH",					qfalse,	SP_trigger_KOTH},//JAPRO KOTH
+
 	{ "trigger_lightningstrike",		qfalse,	SP_trigger_lightningstrike },
 	{ "trigger_multiple",				qfalse,	SP_trigger_multiple },
 

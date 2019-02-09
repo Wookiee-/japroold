@@ -596,7 +596,9 @@ qboolean SpotWouldTelefrag3( vec3_t spot ) {
 		if ( hit->client && hit->client->ps.stats[STAT_HEALTH] > 0 ) {
 			return qtrue;
 		}
-
+		if (hit->r.contents & CONTENTS_LAVA || hit->r.contents & CONTENTS_NODROP) { //assume only pits are contents_nodrop ?
+			return qtrue;
+		}
 	}
 
 	return qfalse;
@@ -1578,6 +1580,7 @@ void SetupGameGhoul2Model(gentity_t *ent, char *modelname, char *skinName)
 	char		GLAName[MAX_QPATH];
 	vec3_t	tempVec = {0,0,0};
 
+#if 0 //HELLO?
 	if (strlen(modelname) >= MAX_QPATH )
 	{
 		Com_Error( ERR_FATAL, "SetupGameGhoul2Model(%s): modelname exceeds MAX_QPATH.\n", modelname );
@@ -1586,6 +1589,7 @@ void SetupGameGhoul2Model(gentity_t *ent, char *modelname, char *skinName)
 	{
 		Com_Error( ERR_FATAL, "SetupGameGhoul2Model(%s): skinName exceeds MAX_QPATH.\n", skinName );
 	}
+#endif
 
 	// First things first.  If this is a ghoul2 model, then let's make sure we demolish this first.
 	if (ent->ghoul2 && trap->G2API_HaveWeGhoul2Models(ent->ghoul2))
@@ -2198,14 +2202,37 @@ char *G_ValidateUserinfo( const char *userinfo )
 	return NULL;
 }
 
-qboolean ClientUserinfoChanged( int clientNum ) {
+void G_ValidateCosmetics(gclient_t *client, char *cosmeticString, size_t cosmeticStringSize) {
+	int cosmetics = atoi(cosmeticString);
+
+	if (client->sess.accountFlags & JAPRO_ACCOUNTFLAG_ALLCOSMETICS)
+		return; //debug testing
+
+	if (cosmetics) {//Optimized
+		int i;
+
+		for (i=0; i<MAX_COSMETIC_UNLOCKS; i++) { //For each bit, check if its allowed, if not, remove.
+			if (!cosmeticUnlocks[i].active)
+				break;
+			if ((cosmetics & (1 << cosmeticUnlocks[i].bitvalue))) { //Use .bitvalue instead of i, since some of these are "public/free" cosmetics
+				if (!(client->pers.unlocks & 1 << cosmeticUnlocks[i].bitvalue)) { //Check to see if its unlocked, if not disable.
+					cosmetics &= ~(1 << cosmeticUnlocks[i].bitvalue);
+				}
+			}
+		}
+	}
+
+	Q_strncpyz(cosmeticString, va("%i", cosmetics), sizeof(cosmeticString));
+}
+
+qboolean ClientUserinfoChanged( int clientNum ) { //I think anything treated as an INT can just be max_qpath instead of max_info_string and help performance  a bit..?
 	gentity_t	*ent = g_entities + clientNum;
 	gclient_t	*client = ent->client;
 	int			teamLeader, team=TEAM_FREE, health=100, maxHealth=100;
 	char		*s=NULL,						*value=NULL,
 				userinfo[MAX_INFO_STRING]={0},	buf[MAX_INFO_STRING]={0},		oldClientinfo[MAX_INFO_STRING]={0},
 				model[MAX_QPATH]={0},			forcePowers[MAX_QPATH]={0},		oldname[MAX_NETNAME]={0},
-				className[MAX_QPATH]={0},		color1[MAX_INFO_STRING]={0},	color2[MAX_INFO_STRING]={0}, cp_sbRGB1[MAX_INFO_STRING]={0}, cp_sbRGB2[MAX_INFO_STRING]={0};
+				className[MAX_QPATH]={0},		color1[MAX_QPATH]={0},	color2[MAX_QPATH]={0}, cp_sbRGB1[MAX_QPATH]={0}, cp_sbRGB2[MAX_QPATH]={0}, cp_cosmetics[MAX_QPATH] = { 0 };
 	qboolean	modelChanged = qfalse, female = qfalse;
 
 	trap->GetUserinfo( clientNum, userinfo, sizeof( userinfo ) );
@@ -2273,6 +2300,11 @@ qboolean ClientUserinfoChanged( int clientNum ) {
 	else
 		client->pers.showChatCP = qfalse;
 
+	if (atoi(s) & JAPRO_PLUGIN_CONSOLECP)
+		client->pers.showConsoleCP = qtrue;
+	else
+		client->pers.showConsoleCP = qfalse;
+
 	if (atoi(s) & JAPRO_PLUGIN_NODMGNUMBERS)
 		client->pers.noDamageNumbers = qtrue;
 	else
@@ -2308,7 +2340,7 @@ qboolean ClientUserinfoChanged( int clientNum ) {
 			else if (i == 1)
 				client->pers.timenudge = atoi(pch);
 			else if (i == 2)
-				client->pers.maxFPS = atoi(pch);
+				client->pers.maxFPS = atoi(pch); //This should have been max msec i guess. w/e
 			else 
 				break;
 			pch = strtok (NULL, " ");
@@ -2447,6 +2479,10 @@ qboolean ClientUserinfoChanged( int clientNum ) {
 		if ( colorOverride[0] != 0.0f || colorOverride[1] != 0.0f || colorOverride[2] != 0.0f )
 			VectorScaleM( colorOverride, 255.0f, client->ps.customRGBA );
 	}
+
+	Q_strncpyz(cp_cosmetics, Info_ValueForKey(userinfo, "cp_cosmetics"), sizeof(cp_cosmetics));
+	if (g_validateCosmetics.integer)
+		G_ValidateCosmetics(client, cp_cosmetics, sizeof(cp_cosmetics)); //Model cosmetics
 
 	// bots set their team a few frames later
 	if ( level.gametype >= GT_TEAM && g_entities[clientNum].r.svFlags & SVF_BOT )
@@ -2589,6 +2625,7 @@ qboolean ClientUserinfoChanged( int clientNum ) {
 	Q_strcat( buf, sizeof( buf ), va( "c2\\%s\\", color2 ) );
 	Q_strcat( buf, sizeof(buf), va( "c3\\%s\\", cp_sbRGB1 ) );//rgbsabers
 	Q_strcat( buf, sizeof(buf), va( "c4\\%s\\", cp_sbRGB2 ) );//rgbsabers
+	Q_strcat(buf, sizeof(buf), va("c5\\%s\\", cp_cosmetics));//cosmetics
 	Q_strcat( buf, sizeof( buf ), va( "hc\\%i\\", client->pers.maxHealth ) );
 	if ( ent->r.svFlags & SVF_BOT )
 		Q_strcat( buf, sizeof( buf ), va( "skill\\%s\\", Info_ValueForKey( userinfo, "skill" ) ) );
@@ -2633,6 +2670,16 @@ qboolean ClientUserinfoChanged( int clientNum ) {
 	return qtrue;
 }
 
+//[JAPRO - Serverside - All - Ignore subfunction - Start]
+void QINLINE ClientRemoveIgnore(const int targetID) {
+	int i;
+	for (i = 0; i < level.maxclients; ++i) {
+		if (level.clients[i].pers.connected == CON_CONNECTED) {
+			level.clients[i].sess.ignore &= ~(1 << targetID);
+		}
+	}
+}
+//[JAPRO - Serverside - All - Ignore subfunction - End]
 
 /*
 ===========
@@ -2657,6 +2704,20 @@ restarts.
 
 static qboolean CompareIPs( const char *ip1, const char *ip2 )
 {
+	char *p = NULL;
+	p = strchr(ip1, ':');
+	if (p)
+		*p = 0;
+	p = strchr(ip2, ':');
+	if (p)
+		*p = 0;
+
+	if (!Q_stricmp(ip1, ip2)) {
+		return qtrue;
+	}
+	return qfalse;
+
+	/*
 	while ( 1 ) {
 		if ( *ip1 != *ip2 )
 			return qfalse;
@@ -2667,6 +2728,7 @@ static qboolean CompareIPs( const char *ip1, const char *ip2 )
 	}
 
 	return qtrue;
+	*/
 }
 
 char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
@@ -2699,6 +2761,13 @@ char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
 	if ( G_FilterPacket( value ) ) {
 		return "Banned.";
 	}
+
+	//Com_Printf("CLIENTCONNECT: IP: %s, OLD SLOT IP: %s\n", tmpIP, level.clients[clientNum].sess.IP);
+	if (!isBot && !level.clients[clientNum].sess.IP[0] || !CompareIPs(tmpIP, level.clients[clientNum].sess.IP)) { //New Client, remove ignore if it was there
+		ClientRemoveIgnore(clientNum);//JAPRO IGNORE, move this to clientConnect, and only do it if IP does not match previous slot
+	}
+
+	//CompareIPs always returns qfalse on linux lol?
 
 	if ( !isBot && g_needpass.integer ) {
 		// check for a password
@@ -4190,6 +4259,7 @@ void ClientSpawn(gentity_t *ent) {
 	else
 	{
 		client->ps.stats[STAT_ARMOR] = client->ps.stats[STAT_MAX_HEALTH] * 0.25;
+		//Clan Arena starting armor/hp here?
 	}
 
 	G_SetOrigin( ent, spawn_origin );
@@ -4308,18 +4378,6 @@ void ClientSpawn(gentity_t *ent) {
 	trap->ICARUS_InitEnt( (sharedEntity_t *)ent );
 }
 
-//[JAPRO - Serverside - All - Ignore subfunction - Start]
-void QINLINE ClientRemoveIgnore(const int targetID) {
-	int i;
-	for (i = 0; i < level.maxclients; ++i) {
-		if (level.clients[i].pers.connected == CON_CONNECTED) {
-			level.clients[i].sess.ignore &= ~(1 << targetID);
-		}
-	}
-}
-//[JAPRO - Serverside - All - Ignore subfunction - End]
-
-
 /*
 ===========
 ClientDisconnect
@@ -4410,12 +4468,13 @@ void ClientDisconnect( int clientNum ) {
 
 		if (ent->client->pers.lastUserName && ent->client->pers.lastUserName[0] && duelAgainst->client && duelAgainst->client->pers.lastUserName && duelAgainst->client->pers.lastUserName[0]) {
 			//Trying to dodge the duel, no no no
-			G_AddDuel(duelAgainst->client->pers.lastUserName, ent->client->pers.lastUserName, duelAgainst->client->pers.duelStartTime, dueltypes[ent->client->ps.clientNum], duelAgainst->client->ps.stats[STAT_HEALTH], duelAgainst->client->ps.stats[STAT_ARMOR]);
+			if (!(ent->client->sess.accountFlags & JAPRO_ACCOUNTFLAG_NODUEL) && !(duelAgainst->client->sess.accountFlags & JAPRO_ACCOUNTFLAG_NODUEL))
+				G_AddDuel(duelAgainst->client->pers.lastUserName, ent->client->pers.lastUserName, duelAgainst->client->pers.duelStartTime, dueltypes[ent->client->ps.clientNum], duelAgainst->client->ps.stats[STAT_HEALTH], duelAgainst->client->ps.stats[STAT_ARMOR]);
 		}
 	}
 
 	if (ent->client->pers.userName && ent->client->pers.userName[0]) {
-		if (ent->client->sess.raceMode && ent->client->pers.stats.startTime) {
+		if (ent->client->sess.raceMode && !ent->client->pers.practice && ent->client->pers.stats.startTime) {
 			ent->client->pers.stats.racetime += (trap->Milliseconds() - ent->client->pers.stats.startTime)*0.001f - ent->client->afkDuration*0.001f;
 			ent->client->afkDuration = 0;
 		}
@@ -4555,8 +4614,6 @@ void ClientDisconnect( int clientNum ) {
 	}
 
 	G_ClearClientLog(clientNum);
-
-	ClientRemoveIgnore(clientNum);//JAPRO IGNORE
 }
 
 

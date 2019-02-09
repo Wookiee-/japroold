@@ -595,7 +595,7 @@ static void RemoveCTFFlags(void) {
 
 	for (i = 0; i < level.num_entities; i++) {
 		ent = &g_entities[i];
-		if (ent->inuse && (ent->s.eType == ET_ITEM) && ((ent->item->giTag == PW_REDFLAG) || (ent->item->giTag == PW_BLUEFLAG)) && (ent->item->giType = IT_TEAM)) {
+		if (ent->inuse && (ent->s.eType == ET_ITEM) && ((ent->item->giTag == PW_REDFLAG) || (ent->item->giTag == PW_BLUEFLAG)) && (ent->item->giType == IT_TEAM)) {
 			G_FreeEntity( ent );
 			//return;
 		}
@@ -712,7 +712,7 @@ void Svcmd_AmBan_f(void) {
 void Svcmd_Amgrantadmin_f(void)
 {
 		char arg[MAX_NETNAME];
-		int clientid = -1; 
+		int clientid = -1;
 
 		if (trap->Argc() != 3) {
 			trap->Print( "Usage: /amGrantAdmin <client> <level>.\n");
@@ -732,18 +732,34 @@ void Svcmd_Amgrantadmin_f(void)
 		Q_strlwr(arg);
 
 		if (!Q_stricmp(arg, "none")) {
-			g_entities[clientid].client->sess.juniorAdmin = qfalse;
-			g_entities[clientid].client->sess.fullAdmin = qfalse;
+			int i;
+			for (i=0; i<=JAPRO_MAX_ADMIN_BITS; i++) {//Loop this 0-22 is admin flags.
+				g_entities[clientid].client->sess.accountFlags &= ~(1 << i);
+			}
 		}
 		else if (!Q_stricmp(arg, "junior")) {
-			g_entities[clientid].client->sess.juniorAdmin = qtrue;
-			g_entities[clientid].client->sess.fullAdmin = qfalse;
-			trap->SendServerCommand( clientid, "print \"You have been granted Junior admin privileges.\n\"" );
+			int i;
+			qboolean added = qfalse;
+			for (i=0; i<=JAPRO_MAX_ADMIN_BITS; i++) {//Loop this 0-22 is admin flags.
+				if (g_juniorAdminLevel.integer & (1 << i)) {
+					g_entities[clientid].client->sess.accountFlags |= (1 << i);
+					added = qtrue;
+				}
+			}
+			if (added)
+				trap->SendServerCommand( clientid, "print \"You have been granted Junior admin privileges.\n\"" );
 		}
 		else if (!Q_stricmp(arg, "full")) {
-			g_entities[clientid].client->sess.juniorAdmin = qfalse;
-			g_entities[clientid].client->sess.fullAdmin = qtrue;
-			trap->SendServerCommand( clientid, "print \"You have been granted Full admin privileges.\n\"" );
+			int i;
+			qboolean added = qfalse;
+			for (i=0; i<=JAPRO_MAX_ADMIN_BITS; i++) {//Loop this 0-22 is admin flags.
+				if (g_fullAdminLevel.integer & (1 << i)) {
+					g_entities[clientid].client->sess.accountFlags |= (1 << i);
+					added = qtrue;
+				}
+			}
+			if (added)
+				trap->SendServerCommand( clientid, "print \"You have been granted Full admin privileges.\n\"" );
 		}
 }
 
@@ -816,7 +832,8 @@ static bitInfo_T weaponTweaks[] = { // MAX_WEAPON_TWEAKS tweaks (24)
 	{"Projectile Sniper"},//27
 	{"No Spread"},//28
 	{"Slow sniper fire rate"},//29
-	{"Make rockets solid for their owners"}//29
+	{"Make rockets solid for their owners"},//30
+	{"Lower max damage for pistol alt fire"}//31
 };
 static const int MAX_WEAPON_TWEAKS = ARRAY_LEN( weaponTweaks );
 
@@ -859,22 +876,22 @@ void Svcmd_ToggleTweakWeapons_f( void ) {
 
 static bitInfo_T saberTweaks[] = { 
 	{"Skip saber interpolate for MP dmgs"},//1
-	{"JK2 1.02 Style Damage System"},//2
+	{"JK2 1.02 style damage system"},//2
 	{"Reduced saberblock for MP damages"},//3
 	{"Reduce saberdrops for MP damages"},//4
 	{"Allow rollcancel for saber swings"},//5
-	{"Remove chainable swings from red stance"},//6
+	{"JK2 1.02 style swings"},//6
 	{"Fixed saberswitch"},//7
 	{"No aim backslash"},//8
 	{"JK2 red DFA"},//9
 	{"Fix yellow DFA"},//10
 	{"Spin red DFA"},//11
 	{"Spin backslash"},//12
-	{"JK2 Lunge"},//13
+	{"JK2 lunge"},//13
 	{"Remove red DFA Boost"},//14
 	{"Make red DFA cost 0 forcepoints"},//15
 	{"Remove all backslash restrictions"},//16
-	{"Allow Sabergun"},//17
+	{"Allow sabergun"},//17
 	{"Allow fast style change for single saber"}//17
 };
 static const int MAX_SABER_TWEAKS = ARRAY_LEN( saberTweaks );
@@ -942,7 +959,10 @@ static bitInfo_T forceTweaks[] = {
 	{"Allow push/pull during roll like JK2"},//13
 	{"Force drain does not give forcepoints to players using force absorb"},//14
 	{"Allow grip during roll"},//15
-	{"Weak force pull"}//16
+	{"Weak force pull"},//16
+	{"Nerfed weapon pull distance"},//17
+	{"Force resistance while firing/charging weapon"},//18
+	{"Stop rage from affecting firerate of weapons"}//19
 };
 static const int MAX_FORCE_TWEAKS = ARRAY_LEN( forceTweaks );
 
@@ -1104,7 +1124,7 @@ void Svcmd_ToggleStartingWeapons_f( void ) {
 			for (index = 0; index < MAX_STARTING_WEAPONS; index++) {  //Read every tweak option and set it to the opposite of what it is currently set to.
 				trap->Cvar_Set("g_startingWeapons", va("%i", (1 << index) ^ (g_startingWeapons.integer & mask)));
 				trap->Cvar_Update(&g_startingWeapons);
-				trap->Print("%s %s^7\n", saberTweaks[index].string, ((g_startingWeapons.integer & (1 << index)) ? "^2Enabled" : "^1Disabled"));
+				trap->Print("%s %s^7\n", startingWeapons[index].string, ((g_startingWeapons.integer & (1 << index)) ? "^2Enabled" : "^1Disabled"));
 				CVU_StartingWeapons();
 			}
 		} //DM End: New -1 toggle all options.
@@ -1250,19 +1270,19 @@ static bitInfo_T adminOptions[] = {
 	{"See IPs"},//13
 	{"Amrename"},//14
 	{"Amlistmaps"},//15
-	{"Rebuild highscores (?)"},//16
-	{"Amwhois"},//17
-	{"Amlookup"},//18
-	{"Use hide"},//19
-	{"See hiders"},//20
-	{"Callvote"},//21
-	{"Killvote"}//22
+	{"Amwhois"},//16
+	{"Amlookup"},//17
+	{"Use hide"},//18
+	{"See hiders"},//19
+	{"Callvote"},//20
+	{"Killvote"},//21
+	{"Read Amsay"}//22
 };
 static const int MAX_ADMIN_OPTIONS = ARRAY_LEN( adminOptions );
 
 void Svcmd_ToggleAdmin_f( void ) {
 	if ( trap->Argc() == 1 ) {
-		trap->Print("Usage: toggleAdmin <admin level (full or junior) admin option>\n");
+		trap->Print("Usage: toggleAdmin <admin level (full or junior)> <admin option>\n");
 		return;
 	}
 	else if ( trap->Argc() == 2 ) {
@@ -1275,7 +1295,7 @@ void Svcmd_ToggleAdmin_f( void ) {
 		else if ( !Q_stricmp(arg1, "f") || !Q_stricmp(arg1, "full"))
 			level = 1;
 		else {
-			trap->Print("Usage: toggleAdmin <admin level (full or junior) admin option>\n");
+			trap->Print("Usage: toggleAdmin <admin level (full or junior)> <admin option>\n");
 			return;
 		}
 
@@ -1310,7 +1330,7 @@ void Svcmd_ToggleAdmin_f( void ) {
 		else if ( !Q_stricmp(arg1, "f") || !Q_stricmp(arg1, "full"))
 			level = 1;
 		else {
-			trap->Print("Usage: toggleAdmin <admin level (full or junior) admin option>\n");
+			trap->Print("Usage: toggleAdmin <admin level (full or junior)> <admin option>\n");
 			return;
 		}
 		trap->Argv( 2, arg2, sizeof(arg2) );
@@ -1555,11 +1575,17 @@ void SV_RebuildElo_f( void );
 #if 1//NEWRACERANKING
 void SV_RebuildRaceRanks_f( void );
 #endif
+void SV_RebuildUnlocks_f(void);
 #if 0
 void G_TestAddRace( void );
 #endif
-void Svcmd_AccountIPLock_f( void );
+void Svcmd_FlagAccount_f( void );
+void Svcmd_ListAdmins_f(void);
 
+void Svcmd_ClanJoin_f( void );
+void Svcmd_ClanKick_f( void );
+void Svcmd_ClanCreate_f( void );
+void Svcmd_ClanDelete_f( void );
 
 /* This array MUST be sorted correctly by alphabetical name field */
 svcmd_t svcmds[] = {
@@ -1588,16 +1614,25 @@ svcmd_t svcmds[] = {
 	{ "checkfields",				G_CheckFields,						qfalse },
 	{ "checkspawns",				G_CheckSpawns,						qfalse },
 
+	{ "clancreate",					Svcmd_ClanCreate_f,					qfalse },
+	{ "clandelete",					Svcmd_ClanDelete_f,					qfalse },
+	{ "clanjoin",					Svcmd_ClanJoin_f,					qfalse },
+	{ "clankick",					Svcmd_ClanKick_f,					qfalse },
+
+
 	{ "clearIP",					Svcmd_ClearIP_f,					qfalse },
 	{ "DBInfo",						Svcmd_DBInfo_f,						qfalse },
 	{ "deleteAccount",				Svcmd_DeleteAccount_f,				qfalse },
 
 	{ "entityinfo",					Svcmd_EntityInfo_f,					qfalse },
 	{ "entitylist",					Svcmd_EntityList_f,					qfalse },
+	{ "flagAccount",				Svcmd_FlagAccount_f,				qfalse },
 	{ "forceteam",					Svcmd_ForceTeam_f,					qfalse },
 	{ "gametype",					Svcmd_ChangeGametype_f,				qfalse },
 	{ "game_memory",				Svcmd_GameMem_f,					qfalse },
-	{ "iplock",						Svcmd_AccountIPLock_f,				qfalse },
+
+	{ "listAdmins",					Svcmd_ListAdmins_f,					qfalse },
+
 	{ "listip",						Svcmd_ListIP_f,						qfalse },
 
 	{ "pause",						SV_Pause_f,							qfalse },
@@ -1609,6 +1644,7 @@ svcmd_t svcmds[] = {
 #if 1//NEWRACERANKING
 	{ "rebuildRaces",				SV_RebuildRaceRanks_f,				qfalse },
 #endif
+	{ "rebuildUnlocks",				SV_RebuildUnlocks_f,				qfalse },
 
 	{ "register",					Svcmd_Register_f,					qfalse },
 

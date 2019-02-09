@@ -173,6 +173,7 @@ G_InitGame
 */
 void InitGameAccountStuff(void);
 void G_SpawnWarpLocationsFromCfg(void);
+void G_SpawnCosmeticUnlocks(void);
 extern void RemoveAllWP(void);
 extern void BG_ClearVehicleParseParms(void);
 gentity_t *SelectRandomDeathmatchSpawnPoint( void );
@@ -378,6 +379,7 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	//setup the warp functionality, and database stuff - japro
 	G_SpawnWarpLocationsFromCfg();
 	G_SpawnHoleFixes();
+	G_SpawnCosmeticUnlocks();
 	InitGameAccountStuff();
 	SetGametypeFuncSolids();
 
@@ -2068,7 +2070,7 @@ void PrintStats(int client) {
 	Q_strncpyz(lDmgNet, va("Net Dmg%s", whitespace), sizeof(lDmgNet));
 	Q_strncpyz(lDmgPerDeath, va("Dmg/Death%s", whitespace), sizeof(lDmgPerDeath));
 	if (level.gametype == GT_TEAM && g_friendlyFire.integer)
-		Q_strncpyz(lTK, va("Team Dmgs%s", whitespace), sizeof(lTK));
+		Q_strncpyz(lTK, va("Team Dmg%s", whitespace), sizeof(lTK)); //Should be just "Team Dmg"
 	if (level.gametype == GT_CTF || level.gametype == GT_CTY) {
 		Q_strncpyz(lCaptures, va("Caps%s", whitespace), sizeof(lCaptures));
 		Q_strncpyz(lReturns, va("Rets%s", whitespace), sizeof(lReturns));
@@ -2183,7 +2185,7 @@ void PrintStats(int client) {
 				Com_sprintf (partialTmpMsg2, sizeof(partialTmpMsg2), "%-*s", strlen(lDrain), int_to_string(drainRatio, numbuf, sizeof(numbuf)));
 				Q_strcat(partialTmpMsg, sizeof(partialTmpMsg), partialTmpMsg2);
 			}	
-			Com_sprintf (partialTmpMsg2, sizeof(partialTmpMsg2), "%-*s", strlen(lName), cl->pers.netname);
+			Com_sprintf (partialTmpMsg2, sizeof(partialTmpMsg2), "%-*^7s", strlen(lName), cl->pers.netname);
 			Q_strcat(partialTmpMsg, sizeof(partialTmpMsg), partialTmpMsg2);
 			Q_strcat(partialTmpMsg, sizeof(partialTmpMsg), "\n");
 
@@ -2891,6 +2893,7 @@ void G_KickAllBots(void)
 
 void SetFailedCallVoteIP(char *ClientIP) {
 	int i;
+	const int time = trap->Milliseconds();
 
 	if (!ClientIP[0]) {
 		//trap->Print("Empty client ip bug!\n");
@@ -2905,8 +2908,8 @@ void SetFailedCallVoteIP(char *ClientIP) {
 		if (!Q_stricmp(voteFloodProtect[i].ip, ClientIP)) { //Found us in the array, so update our votetime
 			//voteFloodProtect[i].lastVoteTime = level.time;
 			voteFloodProtect[i].failCount++;
-			voteFloodProtect[i].voteTimeoutUntil = trap->Milliseconds() + (voteFloodProtect[i].failCount * 1000*g_voteTimeout.integer);
-			voteFloodProtect[i].nextDropTime = trap->Milliseconds() + 1000*g_voteTimeout.integer*5;
+			voteFloodProtect[i].voteTimeoutUntil = time + (voteFloodProtect[i].failCount * 1000*g_voteTimeout.integer);
+			voteFloodProtect[i].nextDropTime = time + 1000*g_voteTimeout.integer*5;
 			//trap->Print("Found client in the array, updating his vote fail time\n");
 			break;
 		}
@@ -2914,8 +2917,8 @@ void SetFailedCallVoteIP(char *ClientIP) {
 			Q_strncpyz(voteFloodProtect[i].ip, ClientIP, sizeof(voteFloodProtect[i].ip));
 			//voteFloodProtect[i].lastVoteTime = level.time;
 			voteFloodProtect[i].failCount++;
-			voteFloodProtect[i].voteTimeoutUntil = trap->Milliseconds() + (voteFloodProtect[i].failCount * 1000*g_voteTimeout.integer);
-			voteFloodProtect[i].nextDropTime = trap->Milliseconds() + 1000*g_voteTimeout.integer*5;
+			voteFloodProtect[i].voteTimeoutUntil = time + (voteFloodProtect[i].failCount * 1000*g_voteTimeout.integer);
+			voteFloodProtect[i].nextDropTime = time + 1000*g_voteTimeout.integer*5;
 			//trap->Print("Client not in array, adding him and his IP( %s, %i)\n", voteFloodProtect[i].ip, voteFloodProtect[i].voteTimeoutUntil);
 			break;
 		}
@@ -3219,11 +3222,12 @@ void CheckCvars( void ) {
 
 static void DropVoteTimeouts(void) { //doesnt need to be checked every frame but w/e..
 	int i;
+	const int time = trap->Milliseconds();
 	for (i=0; i<voteFloodProtectSize; i++) { //Set
 		if (voteFloodProtect[i].ip[0]) { //Found an slot
-			if ((voteFloodProtect[i].failCount > 0) && (voteFloodProtect[i].nextDropTime < trap->Milliseconds())) {
+			if ((voteFloodProtect[i].failCount > 0) && (voteFloodProtect[i].nextDropTime < time)) {
 				voteFloodProtect[i].failCount--;
-				voteFloodProtect[i].nextDropTime = trap->Milliseconds() + 1000*g_voteTimeout.integer*5;
+				voteFloodProtect[i].nextDropTime = time + 1000*g_voteTimeout.integer*5;
 			}
 		}
 		else break;
@@ -3365,9 +3369,19 @@ void G_RunFrame( int levelTime ) {
 
 	static int lastMsgTime = 0;//OSP: pause
 
-	if ((unsigned int)levelTime > (1<<31)) {
-		trap->Print ("Auto quitting server %i\n", levelTime);
-		trap->SendConsoleCommand( EXEC_APPEND, "quit\n");
+	if (g_autoQuit.integer) {
+		if (levelTime > /*g_autoQuit.integer*/5 * 24 * 60 * 60 * 1000) {//5 days
+			//Check if between 5 - 5:01 AM? or w/e?.  or check if anyone on?
+			//Where to do this other than runframe.. something thats called like every 1 second?
+			if (level.numVotingClients == 0) { //No humans ingame
+				trap->Print("Auto quitting server %i\n", levelTime);
+				trap->SendConsoleCommand(EXEC_APPEND, "quit\n");
+			}
+			if (levelTime > (2147483648 - 60*1000)) { //just always quit if its this high.. 24 days?
+				trap->Print("Auto quitting server %i\n", levelTime);
+				trap->SendConsoleCommand(EXEC_APPEND, "quit\n");
+			}
+		}
 	}
 
 	if (level.gametype == GT_SIEGE &&
@@ -3811,7 +3825,7 @@ void G_RunFrame( int levelTime ) {
 			{ //using jetpack, drain fuel
 				if (ent->client->jetPackDebReduce < level.time)
 				{
-					ent->client->ps.jetpackFuel -= 5;
+					ent->client->ps.jetpackFuel -= 6;
 					
 					if (ent->client->ps.jetpackFuel <= 0)
 					{ //turn it off
@@ -3933,6 +3947,13 @@ void G_RunFrame( int levelTime ) {
 					if (xyspeed > ent->client->pers.stats.topSpeed)
 						ent->client->pers.stats.topSpeed = xyspeed; //uhh, round?           
 				}	
+				if (ent->client->ps.duelInProgress) {
+					if (!ent->client->pers.stats.lowestHP || ent->client->ps.stats[STAT_HEALTH] < ent->client->pers.stats.lowestHP)
+						ent->client->pers.stats.lowestHP = ent->client->ps.stats[STAT_HEALTH];
+				}
+				else {
+					ent->client->pers.stats.lowestHP = 0;
+				}
 			}
 
 			if (g_allowNPC.integer)

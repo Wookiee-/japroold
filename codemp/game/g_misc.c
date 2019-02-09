@@ -248,6 +248,7 @@ void TeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean k
 
 	if (player->client->sess.raceMode) {
 		//player->client->ps.powerups[PW_YSALAMIRI] = 0; //Fuck
+		player->client->ps.powerups[PW_FORCE_BOON] = 0;
 		if (player->client->sess.movementStyle == 7 || player->client->sess.movementStyle == 8) //Get rid of their rockets when they tele/noclip..?
 			DeletePlayerProjectiles(player);
 	}
@@ -255,7 +256,7 @@ void TeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean k
 
 void ResetPlayerTimers(gentity_t *ent, qboolean print);//extern?
 //JAPRO - Serverside - New teleport Function - Start
-void AmTeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean droptofloor, qboolean race ) {
+void AmTeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean droptofloor, qboolean race, qboolean toMark ) {
 	gentity_t	*tent;
 	qboolean wasNoClip = qfalse;
 	vec3_t neworigin;
@@ -278,7 +279,8 @@ void AmTeleportPlayer( gentity_t *player, vec3_t origin, vec3_t angles, qboolean
 		wasNoClip = qtrue;
 
 	player->client->noclip = qtrue;
-	ResetPlayerTimers(player, qtrue);
+	if (!toMark || !(player->client->ps.stats[STAT_RESTRICTIONS] & JAPRO_RESTRICT_ALLOWTELES))
+		ResetPlayerTimers(player, qtrue);
 	player->client->ps.fd.forceJumpZStart = -65536; //maybe this will fix that annoying overbounce tele shit
 
 	if (droptofloor) {
@@ -459,9 +461,12 @@ void misc_model_breakable_init( gentity_t *ent );
 
 void SP_misc_model_breakable( gentity_t *ent ) 
 {
-	float grav;
+	float grav, modelscale;
 	G_SpawnInt( "material", "8", (int*)&ent->material );
 	G_SpawnFloat( "radius", "1", &ent->radius ); // used to scale chunk code if desired by a designer
+	G_SpawnFloat( "modelscale", "1", &modelscale );
+	ent->modelScale[0] = ent->modelScale[1] = ent->modelScale[2] = modelscale;
+	ent->s.iModelScale = modelscale * 100;
 
 	misc_model_breakable_init( ent );
 
